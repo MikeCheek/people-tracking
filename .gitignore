@@ -1,0 +1,5 @@
+__pycache__
+captures/
+venv/
+vision_memory.db
+*.pdf
