@@ -8,14 +8,14 @@ from core.face import FaceEngine
 
 os.add_dll_directory(r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\bin")
 
-from db import delete_person, delete_person, get_known_faces, get_people_count, get_people_info, merge_identities, update_name
+from db import delete_person, delete_person, get_known_faces, get_people_count, get_people_info, get_setting, merge_identities, set_approval, set_setting, update_name
 
 st.set_page_config(page_title="Vision Manager", layout="wide")  
 
 @st.fragment(run_every="3s")
 def refresh_people_list():
     data = get_people_info()
-    df = pd.DataFrame(data, columns=["id", "name", "thumbnail_path"])
+    df = pd.DataFrame(data, columns=["id", "name", "thumbnail_path", "is_approved"])
     
     if df.empty:
         st.info("No people detected yet. Run your main vision script first!")
@@ -47,6 +47,12 @@ def refresh_people_list():
                 if st.button("🗑️", key=f"del_{row['id']}", help="Delete this identity"):
                     delete_person(row['id'], row['thumbnail_path'])
                     st.rerun()
+                # Checkbox to approve/cloak
+                is_approved = row['is_approved'] == 1
+                if st.checkbox("✅ Authorize", value=is_approved, key=f"auth_{row['id']}"):
+                    set_approval(row['id'], 1)
+                else:
+                    set_approval(row['id'], 0)
             
             st.divider()
             
@@ -146,6 +152,34 @@ st.title("👥 Advanced Identity Manager")
 
 total_count = get_people_count()
 st.sidebar.metric("Total Identities", total_count)
+
+# --- SIDEBAR SETTINGS SECTION ---
+st.sidebar.title("⚙️ System Settings")
+
+# 1. Privacy Cloak Toggle
+# We fetch the current status from DB (default to 'off' if not set)
+cloak_status = get_setting("enable_privacy_cloak") == "True"
+if st.sidebar.toggle("🔒 Enable Privacy Cloak", value=cloak_status):
+    set_setting("enable_privacy_cloak", "True")
+else:
+    set_setting("enable_privacy_cloak", "False")
+
+# 2. Cyberpunk HUD Toggle
+hud_status = get_setting("enable_hud") == "True"
+if st.sidebar.toggle("🕶️ Cyberpunk HUD Overlay", value=hud_status):
+    set_setting("enable_hud", "True")
+else:
+    set_setting("enable_hud", "False")
+
+#3. Show Landmarks Toggle
+landmark_status = get_setting("show_landmarks") == "True"
+if st.sidebar.toggle("📍 Show Facial Landmarks", value=landmark_status):
+    set_setting("show_landmarks", "True")
+else:
+    set_setting("show_landmarks", "False")
+
+st.sidebar.divider()
+# -------------------------------
 
 tab_main, tab_smart_merge, tab_merge = st.tabs(["Identify & Name", "Smart Deduplication", "Merge Maintenance"])
 

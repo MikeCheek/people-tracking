@@ -1,4 +1,5 @@
 import cv2
+from core.ui import draw_cyberpunk_hud, draw_dense_mesh
 import db
 import numpy as np
 from core.camera import WebcamStream
@@ -7,7 +8,7 @@ from collections import deque, Counter
 from deepface import DeepFace
 
 # --- CONFIG ---
-SMOOTHING_WINDOW = 20  # Number of frames to remember for smoothing
+SMOOTHING_WINDOW = 10  # Number of frames to remember for smoothing
 
 # This dictionary will store: {person_id: {'age': deque, 'gender': deque}}
 history = {}
@@ -44,92 +45,78 @@ def main():
     engine.update_search_index(known_faces_cache)
     
     frame_count = 0
-    
+    approved_ids = []
+
     while True:
         frame = video_stream.read()
         if frame is None: continue
-        frame_count += 1
-        if frame_count % 5 != 0:
-            continue
         
-        # Scaling for performance
-        small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-        faces = engine.get_face_features(small_frame)
+        output_frame = frame.copy() # We work on a copy to keep the original clean
+        
+        # 1. Update Permissions from DB
+        if frame_count % 30 == 0:
+            approved_ids = db.get_approved_ids()
+            privacy_active = db.get_setting("enable_privacy_cloak") == "True"
+            hud_active = db.get_setting("enable_hud") == "True"
+            show_landmarks = db.get_setting("show_landmarks") == "True"
+
+        frame_count += 1
+        # 2. Get Faces
+        faces = engine.get_face_features(output_frame)
 
         for face in faces:
-            bbox = (face['bbox'] * 2).astype(int)
-            new_vec = face['embedding']
+            bbox = face['bbox'].astype(int)
+            x1, y1, x2, y2 = np.clip(bbox, 0, [frame.shape[1], frame.shape[0], frame.shape[1], frame.shape[0]])
             
-            current_emotion = None
-            # 1. Identity Search
-            person_id, confidence = engine.search_face(new_vec)
+            person_id, confidence = engine.search_face(face['embedding'])
             
-            try:
-                analysis = DeepFace.analyze(img_path=small_frame, actions=['emotion'], enforce_detection=False)
-                current_emotion = analysis[0]['dominant_emotion']
-            except Exception as e:
-                print("DeepFace emotion analysis error:", e)
-                current_emotion = "Neutral"
-            
-            if person_id:
-                name = db.get_person_name(person_id)
-            else:
-                person_id = db.create_new_person(new_vec)
-                name = "New User"
-                
-                x1, y1, x2, y2 = np.clip(bbox, 0, [frame.shape[1], frame.shape[0], frame.shape[1], frame.shape[0]])
-                face_crop = frame[int(y1):int(y2), int(x1):int(x2)]
-                img_path = f"captures/person_{person_id}.jpg"
-                cv2.imwrite(img_path, face_crop)
-                db.update_thumbnail_path(person_id, img_path)
-                
-                # 3. REFRESH CACHE: A new face exists, update the search index
-                known_faces_cache = db.get_known_faces()
+            # --- IDENTITY & EMOTION ---
+            current_emotion = "Neutral"
+            if frame_count % 10 == 0:
+                try:
+                    face_crop = frame[y1:y2, x1:x2]
+                    analysis = DeepFace.analyze(face_crop, actions=['emotion'], enforce_detection=False, silent=True)
+                    current_emotion = analysis[0]['dominant_emotion']
+                except: pass
+
+            if not person_id:
+                person_id = db.create_new_person(face['embedding'])
+                cv2.imwrite(f"captures/person_{person_id}.jpg", frame[y1:y2, x1:x2])
                 engine.update_search_index(db.get_known_faces())
-
-            # 2. SMOOTHING LOGIC (The Fix)
+                db.update_thumbnail_path(person_id, f"captures/person_{person_id}.jpg")
+            
+            name = db.get_person_name(person_id)
             age, gender, emotion = get_smoothed_attributes(person_id, face['age'], face['gender'], current_emotion)
-            
-            # 3. UI Styling
-            color = (255, 100, 200) if gender == 0 else (255, 200, 0) # Pink vs Cyan
-            
-            emo_colors = {
-                "happy": (0, 255, 255),    # Yellow
-                "sad": (255, 0, 0),       # Blue
-                "angry": (0, 0, 255),      # Red
-                "surprise": (0, 165, 255), # Orange
-                "neutral": (255, 255, 255) # White
-            }
-            color = emo_colors.get(emotion.lower(), (255, 200, 0))
-            
-            # Map Age to Stage
-            if age < 13: stage = "Child"
-            elif age < 20: stage = "Teen"
-            elif age < 30: stage = "Young Adult"
-            elif age < 60: stage = "Adult"
-            else: stage = "Senior"
 
-            # 4. Draw Smooth UI
-            cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, 2)
-            
-            # Overlay Header
-            overlay = frame.copy()
-            cv2.rectangle(overlay, (bbox[0], bbox[1] - 60), (bbox[2], bbox[1]), color, -1)
-            cv2.addWeighted(overlay, 0.4, frame, 0.6, 0, frame)
-            
-            cv2.putText(frame, f"{name} | {stage}", (bbox[0] + 5, bbox[1] - 35), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-            cv2.putText(frame, f"Age: ~{age} | {'Male' if gender == 1 else 'Female'}", (bbox[0] + 5, bbox[1] - 10), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1, cv2.LINE_AA)
-            cv2.putText(frame, f"Mood: {emotion.upper()}", (bbox[0], bbox[3] + 20), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+            # --- PRIVACY LOGIC: LOCALIZED BLUR ---
+            if person_id in approved_ids or not privacy_active:
+                # AUTHORIZED: Draw the Cyberpunk HUD
+                emo_colors = {"happy": (0, 255, 255), "sad": (255, 0, 0), "angry": (0, 0, 255), "surprise": (0, 165, 255), "neutral": (255, 255, 255)}
+                color = emo_colors.get(emotion.lower(), (255, 200, 0))
+                if hud_active:
+                    draw_cyberpunk_hud(output_frame, face, name, age, emotion, color)
+                if show_landmarks:
+                    draw_dense_mesh(output_frame, face, color, alpha=0.5)
+            else:
+                # UNAUTHORIZED: Blur ONLY the face region
+                face_roi = output_frame[y1:y2, x1:x2]
+                # Apply a heavy blur to the localized crop
+                blurred_face = cv2.GaussianBlur(face_roi, (51, 51), 30)
+                # Put it back into the main frame
+                output_frame[y1:y2, x1:x2] = blurred_face
+                
+                # Visual indicator that it's blocked
+                cv2.rectangle(output_frame, (x1, y1), (x2, y2), (0, 0, 255), 1)
+                cv2.putText(output_frame, "UNAUTHORIZED", (x1, y1-10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
 
-        cv2.imshow('Smooth Face Tracker', frame)
+        cv2.imshow('Selective Privacy Shield', output_frame)
+        
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     video_stream.stop()
     cv2.destroyAllWindows()
-
+    
 if __name__ == "__main__":
     main()

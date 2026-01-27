@@ -14,6 +14,8 @@ Real time camera feed with detected faces and their attributes:
 
 <img src="docs/live_camera.png" alt="Camera Feed" width="400"/>
 
+<img src="docs/live_camera_blurred.png" alt="Camera blurred" width="400"/>
+
 Streamlit-based manager interface:
 
 <img src="docs/list.png" alt="Manager Interface" width="500"/>

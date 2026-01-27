@@ -15,7 +15,7 @@ def get_known_faces():
 def create_new_person(encoding):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("INSERT INTO persons (name) VALUES (?)", ("Unknown",))
+    c.execute("INSERT INTO people (name) VALUES (?)", ("Unknown",))
     new_id = c.lastrowid
     c.execute("INSERT INTO face_encodings (person_id, encoding) VALUES (?, ?)", 
               (new_id, pickle.dumps(encoding)))
@@ -26,7 +26,7 @@ def create_new_person(encoding):
 def get_people_info():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT id, name, thumbnail_path FROM persons ORDER BY id DESC")
+    c.execute("SELECT id, name, thumbnail_path, is_approved FROM people ORDER BY id DESC")
     data = c.fetchall()
     conn.close()
     return data
@@ -34,26 +34,26 @@ def get_people_info():
 def get_person_name(person_id):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("SELECT name FROM persons WHERE id=?", (person_id,))
+    c.execute("SELECT name FROM people WHERE id=?", (person_id,))
     res = c.fetchone()
     conn.close()
     return res[0] if res else "Unknown"
 
 def update_thumbnail_path(person_id, path):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE persons SET thumbnail_path = ? WHERE id = ?", (path, person_id))
+    conn.execute("UPDATE people SET thumbnail_path = ? WHERE id = ?", (path, person_id))
     conn.commit()
     conn.close()
     
 def update_name(person_id, new_name):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE persons SET name=? WHERE id=?", (new_name, person_id))
+    conn.execute("UPDATE people SET name=? WHERE id=?", (new_name, person_id))
     conn.commit()
     conn.close()
 
 def delete_person(person_id, thumbnail_path):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM persons WHERE id=?", (person_id,))
+    conn.execute("DELETE FROM people WHERE id=?", (person_id,))
     conn.execute("DELETE FROM face_encodings WHERE person_id=?", (person_id,))
     conn.commit()
     if thumbnail_path and os.path.exists(thumbnail_path):
@@ -61,7 +61,7 @@ def delete_person(person_id, thumbnail_path):
         
 def get_people_count():
     conn = sqlite3.connect(DB_PATH)
-    count  = conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0]
+    count  = conn.execute("SELECT COUNT(*) FROM people").fetchone()[0]
     conn.close()
     return count
 
@@ -70,11 +70,11 @@ def merge_identities(target_id, source_id):
     
     conn.execute("UPDATE face_encodings SET person_id=? WHERE person_id=?", (target_id, source_id))
     
-    res = conn.execute("SELECT thumbnail_path FROM persons WHERE id=?", (source_id,)).fetchone()
+    res = conn.execute("SELECT thumbnail_path FROM people WHERE id=?", (source_id,)).fetchone()
     if res and res[0] and os.path.exists(res[0]):
         os.remove(res[0])
         
-    conn.execute("DELETE FROM persons WHERE id=?", (source_id,))
+    conn.execute("DELETE FROM people WHERE id=?", (source_id,))
     conn.commit()
     conn.close()
     
@@ -82,14 +82,61 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
-    c.execute('''CREATE TABLE IF NOT EXISTS persons
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, thumbnail_path TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS people
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, thumbnail_path TEXT, is_approved INTEGER DEFAULT 0)''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS face_encodings
-                 (person_id INTEGER, encoding BLOB, FOREIGN KEY(person_id) REFERENCES persons(id))''')
+                 (person_id INTEGER, encoding BLOB, FOREIGN KEY(person_id) REFERENCES people(id))''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS settings
+                 (key TEXT PRIMARY KEY, value TEXT)
+              ''')
+    
+    c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('enable_privacy_cloak', 'False')")
+    c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('enable_hud', 'True')")
+    c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('show_landmarks', 'False')")
                   
     conn.commit()
     conn.close()
+    
+def set_approval(person_id, status):
+    # status should be 1 for approved, 0 for cloaked
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE people SET is_approved = ? WHERE id = ?", (status, person_id))
+    conn.commit()
+    conn.close()
+
+def get_approved_ids():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM people WHERE is_approved = 1")
+    ids = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return ids
+
+def set_setting(key, value):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+    conn.commit()
+    conn.close()
+    
+def get_setting(key):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM settings WHERE key = ?", (key,))
+    res = cursor.fetchone()
+    conn.close()
+    return res[0] if res else None
+
+def get_settings():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT key, value FROM settings")
+    settings = {row[0]: row[1] for row in cursor.fetchall()}
+    conn.close()
+    return settings
 
 if __name__ == "__main__":
     init_db()

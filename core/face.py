@@ -20,12 +20,17 @@ class FaceEngine:
             # Normalize embedding for Cosine Similarity via Dot Product
             feat = face['embedding']
             norm_feat = feat / np.linalg.norm(feat)
-            
+                        
             results.append({
                 'bbox': face['bbox'].astype(int),
                 'embedding': norm_feat,
                 'gender': face['gender'],
-                'age': face['age']
+                'age': face['age'],
+                'kps': face['kps'],
+                'det_score': face['det_score'],
+                'landmark_3d_68': face['landmark_3d_68'],
+                'pose': face['pose'],
+                'landmark_2d_106': face['landmark_2d_106'],
             })
         return results
 
