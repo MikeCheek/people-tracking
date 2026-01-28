@@ -54,7 +54,7 @@ def draw_dense_mesh(frame, face, color, alpha=0.2):
 
     cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
-def draw_cyberpunk_hud(frame, face, name, age, emotion, color, resize=1.0):
+def draw_cyberpunk_hud(frame, face, name, age, gender, emotion, color, resize=1.0):
     bbox = (face['bbox'] * resize).astype(int)
     kps = (face['kps'] * resize).astype(int) # 5 Keypoints
     
@@ -101,9 +101,10 @@ def draw_cyberpunk_hud(frame, face, name, age, emotion, color, resize=1.0):
     
     # Text
     font = cv2.FONT_HERSHEY_SIMPLEX
-    cv2.putText(frame, f"ID: {name.upper()}", (sidebar_x + 5, y1 + 20), font, 0.4, color, 1)
-    cv2.putText(frame, f"AGE: {age}", (sidebar_x + 5, y1 + 40), font, 0.4, color, 1)
-    cv2.putText(frame, f"MOOD: {emotion.upper()}", (sidebar_x + 5, y1 + 60), font, 0.4, color, 1)
+    cv2.putText(frame, f"ID: {name.upper()}", (sidebar_x + 5, y1 + 10), font, 0.4, color, 1)
+    cv2.putText(frame, f"AGE: {age}", (sidebar_x + 5, y1 + 30), font, 0.4, color, 1)
+    cv2.putText(frame, f"MOOD: {emotion.upper()}", (sidebar_x + 5, y1 + 50), font, 0.4, color, 1)
+    cv2.putText(frame, f"GENDER: {gender.upper()}", (sidebar_x + 5, y1 + 70), font, 0.4, color, 1)
 
     # --- 5. HEAD POSE INDICATOR (Simple Yaw) ---
     # If the nose is further from the left eye than the right, they are looking right

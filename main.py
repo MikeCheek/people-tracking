@@ -87,6 +87,8 @@ def main():
             
             name = db.get_person_name(person_id)
             age, gender, emotion = get_smoothed_attributes(person_id, face['age'], face['gender'], current_emotion)
+            
+            gender = "Male" if gender == 1 else "Female"
 
             # --- PRIVACY LOGIC: LOCALIZED BLUR ---
             if person_id in approved_ids or not privacy_active:
@@ -94,7 +96,7 @@ def main():
                 emo_colors = {"happy": (0, 255, 255), "sad": (255, 0, 0), "angry": (0, 0, 255), "surprise": (0, 165, 255), "neutral": (255, 255, 255)}
                 color = emo_colors.get(emotion.lower(), (255, 200, 0))
                 if hud_active:
-                    draw_cyberpunk_hud(output_frame, face, name, age, emotion, color)
+                    draw_cyberpunk_hud(output_frame, face, name, age, gender, emotion, color)
                 if show_landmarks:
                     draw_dense_mesh(output_frame, face, color, alpha=0.5)
             else:
